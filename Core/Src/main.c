@@ -28,6 +28,11 @@
 #include "socket.h"
 #include "usart1.h"
 #include "tcp_client.h"
+#include "dwt.h"
+#include "timer2.h"
+#include "timer3.h"
+#include "i2c1.h"
+#include "lcd.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -96,7 +101,11 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
+  DWT_Init();
+  TIMER2_Init();
   USART1_Init();
+  I2C1_Init();
+  LCD_Init();
 
   USART1_SendString("\r\n=== Testing DHCP IP address ===\r\n");
   if(W5500_Init() != 0)
@@ -113,6 +122,9 @@ int main(void)
     // Close connection
     TCP_Client_Close();
   }
+
+  // Setup TIM3 for 10ms control loop
+  TIMER3_SetupPeriod(10);  // 10ms period
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -122,6 +134,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    TIMER3_WaitPeriod();
   }
   /* USER CODE END 3 */
 }
