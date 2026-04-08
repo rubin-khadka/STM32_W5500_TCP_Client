@@ -27,6 +27,7 @@
 #include "dns.h"
 #include "socket.h"
 #include "usart1.h"
+#include "tcp_client.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,8 +49,7 @@
 SPI_HandleTypeDef hspi1;
 
 /* USER CODE BEGIN PV */
-extern wiz_NetInfo netInfo;
-#define DNS_SOCKET 6
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -104,36 +104,14 @@ int main(void)
     Error_Handler();
   }
 
-  /* === SIMPLE DNS TEST === */
-  USART1_SendString("\r\n=== Testing DNS ===\r\n");
-
-  // DNS server (Google's DNS)
-  uint8_t dns_server[4] = {8, 8, 8, 8};
-  // Domain to resolve
-  char *domain = "api.open-meteo.com";
-  // Where to store the resolved IP
-  uint8_t resolved_ip[4];
-
-  // Run DNS query
-  int8_t result = DNS_run(dns_server, (uint8_t*) domain, resolved_ip);
-
-  if(result == 1)
+  // Initialize TCP Client and connect to weather server
+  if(TCP_Client_Init() == 0)
   {
-    USART1_SendString("DNS Success! ");
-    USART1_SendString(domain);
-    USART1_SendString(" -> ");
-    USART1_SendNumber(resolved_ip[0]);
-    USART1_SendString(".");
-    USART1_SendNumber(resolved_ip[1]);
-    USART1_SendString(".");
-    USART1_SendNumber(resolved_ip[2]);
-    USART1_SendString(".");
-    USART1_SendNumber(resolved_ip[3]);
-    USART1_SendString("\r\n");
-  }
-  else
-  {
-    USART1_SendString("DNS Failed!\r\n");
+    // Get weather data
+    TCP_Client_GetWeather();
+
+    // Close connection
+    TCP_Client_Close();
   }
   /* USER CODE END 2 */
 
