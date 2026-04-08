@@ -11,8 +11,11 @@
 #include "socket.h"
 #include "dns.h"
 #include "usart1.h"
+#include "lcd.h"
+#include "tcp_client.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 // DNS Server
 static uint8_t dns_ip[4] = DNS_SERVER_IP;
@@ -54,6 +57,208 @@ static int TCP_Client_ResolveDNS(void)
   USART1_SendString("\r\n");
 
   return 0;
+}
+
+// Parse JSON response - extract only current_weather object
+static void ParseWeatherData(char *response, WeatherData_t *weather)
+{
+  char *current_weather_start;
+  char *ptr;
+  char number_buffer[20];
+  int i;
+
+  // Initialize
+  weather->temperature = 0;
+  weather->windspeed = 0;
+  weather->winddirection = 0;
+  weather->weathercode = 0;
+
+  USART1_SendString("Parsing JSON...\r\n");
+
+  // Find "current_weather" object
+  current_weather_start = strstr(response, "\"current_weather\"");
+  if(!current_weather_start)
+  {
+    USART1_SendString("current_weather not found!\r\n");
+    return;
+  }
+
+  // Find the opening '{' after current_weather
+  current_weather_start = strchr(current_weather_start, '{');
+  if(!current_weather_start)
+  {
+    USART1_SendString("No current_weather object found!\r\n");
+    return;
+  }
+
+  USART1_SendString("Found current_weather object\r\n");
+
+  // Debug: Print current_weather object (first 150 chars)
+  char debug_buf[151];
+  strncpy(debug_buf, current_weather_start, 150);
+  debug_buf[150] = '\0';
+  USART1_SendString("current_weather: ");
+  USART1_SendString(debug_buf);
+  USART1_SendString("\r\n");
+
+  // Extract temperature from current_weather
+  ptr = strstr(current_weather_start, "\"temperature\"");
+  if(ptr)
+  {
+    ptr = strchr(ptr, ':');
+    if(ptr)
+    {
+      ptr++;
+      // Skip any spaces
+      while(*ptr == ' ')
+        ptr++;
+
+      // Extract number
+      i = 0;
+      while(*ptr && ((*ptr >= '0' && *ptr <= '9') || *ptr == '.' || *ptr == '-') && i < 19)
+      {
+        number_buffer[i++] = *ptr++;
+      }
+      number_buffer[i] = '\0';
+
+      weather->temperature = 0;
+      // Manual conversion
+      int is_negative = 0;
+      int int_part = 0;
+      int dec_part = 0;
+      int dec_div = 1;
+      int j = 0;
+
+      if(number_buffer[0] == '-')
+      {
+        is_negative = 1;
+        j = 1;
+      }
+
+      while(number_buffer[j] >= '0' && number_buffer[j] <= '9')
+      {
+        int_part = int_part * 10 + (number_buffer[j] - '0');
+        j++;
+      }
+
+      if(number_buffer[j] == '.')
+      {
+        j++;
+        while(number_buffer[j] >= '0' && number_buffer[j] <= '9')
+        {
+          dec_part = dec_part * 10 + (number_buffer[j] - '0');
+          dec_div *= 10;
+          j++;
+        }
+      }
+
+      weather->temperature = int_part + (float) dec_part / dec_div;
+      if(is_negative)
+        weather->temperature = -weather->temperature;
+
+      USART1_SendString("Temperature: ");
+      USART1_SendNumber((int) weather->temperature);
+      USART1_SendString(".");
+      int dec = (int) ((weather->temperature - (int) weather->temperature) * 10);
+      if(dec < 0)
+        dec = -dec;
+      USART1_SendNumber(dec);
+      USART1_SendString(" C\r\n");
+    }
+  }
+
+  // Extract windspeed from current_weather
+  ptr = strstr(current_weather_start, "\"windspeed\"");
+  if(ptr)
+  {
+    ptr = strchr(ptr, ':');
+    if(ptr)
+    {
+      ptr++;
+      while(*ptr == ' ')
+        ptr++;
+
+      i = 0;
+      while(*ptr && ((*ptr >= '0' && *ptr <= '9') || *ptr == '.') && i < 19)
+      {
+        number_buffer[i++] = *ptr++;
+      }
+      number_buffer[i] = '\0';
+
+      weather->windspeed = 0;
+      int int_part = 0;
+      int dec_part = 0;
+      int dec_div = 1;
+      int j = 0;
+
+      while(number_buffer[j] >= '0' && number_buffer[j] <= '9')
+      {
+        int_part = int_part * 10 + (number_buffer[j] - '0');
+        j++;
+      }
+
+      if(number_buffer[j] == '.')
+      {
+        j++;
+        while(number_buffer[j] >= '0' && number_buffer[j] <= '9')
+        {
+          dec_part = dec_part * 10 + (number_buffer[j] - '0');
+          dec_div *= 10;
+          j++;
+        }
+      }
+
+      weather->windspeed = int_part + (float) dec_part / dec_div;
+
+      USART1_SendString("Wind Speed: ");
+      USART1_SendNumber((int) weather->windspeed);
+      USART1_SendString(" km/h\r\n");
+    }
+  }
+
+  // Extract winddirection from current_weather
+  ptr = strstr(current_weather_start, "\"winddirection\"");
+  if(ptr)
+  {
+    ptr = strchr(ptr, ':');
+    if(ptr)
+    {
+      ptr++;
+      while(*ptr == ' ')
+        ptr++;
+      weather->winddirection = 0;
+      while(*ptr >= '0' && *ptr <= '9')
+      {
+        weather->winddirection = weather->winddirection * 10 + (*ptr - '0');
+        ptr++;
+      }
+      USART1_SendString("Wind Direction: ");
+      USART1_SendNumber(weather->winddirection);
+      USART1_SendString(" deg\r\n");
+    }
+  }
+
+  // Extract weathercode from current_weather
+  ptr = strstr(current_weather_start, "\"weathercode\"");
+  if(ptr)
+  {
+    ptr = strchr(ptr, ':');
+    if(ptr)
+    {
+      ptr++;
+      while(*ptr == ' ')
+        ptr++;
+      weather->weathercode = 0;
+      while(*ptr >= '0' && *ptr <= '9')
+      {
+        weather->weathercode = weather->weathercode * 10 + (*ptr - '0');
+        ptr++;
+      }
+      USART1_SendString("Weather Code: ");
+      USART1_SendNumber(weather->weathercode);
+      USART1_SendString("\r\n");
+    }
+  }
 }
 
 // Initialize TCP client and connect to weather server
@@ -108,11 +313,13 @@ int TCP_Client_Init(void)
   return -1;
 }
 
-// Send HTTP GET request and receive weather data
 void TCP_Client_GetWeather(void)
 {
   int32_t ret;
   uint8_t status;
+  WeatherData_t weather = {0};
+  char display_line1[17];
+  char display_line2[17];
 
   status = getSn_SR(TCP_CLIENT_SOCKET);
 
@@ -122,36 +329,75 @@ void TCP_Client_GetWeather(void)
     sprintf((char*) tx_buffer, "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n"
         "Connection: close\r\n"
-        "\r\n", WEATHER_PATH, WEATHER_HOST);
+        "\r\n",
+    WEATHER_PATH, WEATHER_HOST);
 
     // Send HTTP request
     USART1_SendString("Sending HTTP request...\r\n");
     ret = send(TCP_CLIENT_SOCKET, tx_buffer, strlen((char*) tx_buffer));
-    if(ret > 0)
-    {
-      USART1_SendString("HTTP request sent\r\n");
-    }
-    else
+    if(ret <= 0)
     {
       USART1_SendString("Send failed\r\n");
       return;
     }
 
+    USART1_SendString("HTTP request sent\r\n");
+
     // Receive response
-    USART1_SendString("Receiving weather data...\r\n\r\n");
+    USART1_SendString("Receiving weather data...\r\n");
+
+    // Clear receive buffer
+    memset(rx_buffer, 0, sizeof(rx_buffer));
 
     while(1)
     {
-      ret = recv(TCP_CLIENT_SOCKET, rx_buffer, sizeof(rx_buffer) - 1);
+      ret = recv(
+      TCP_CLIENT_SOCKET, rx_buffer + strlen((char*) rx_buffer), sizeof(rx_buffer) - strlen((char*) rx_buffer) - 1);
       if(ret <= 0)
         break;
-
-      rx_buffer[ret] = '\0';
-      USART1_SendString((char*) rx_buffer);
-      USART1_SendString("\r\n");
     }
 
-    USART1_SendString("\r\n=== HTTP Request Complete ===\r\n");
+    USART1_SendString("Raw JSON:\r\n");
+    USART1_SendString((char*) rx_buffer);
+    USART1_SendString("\r\n");
+
+    // Parse weather data
+    ParseWeatherData((char*) rx_buffer, &weather);
+
+    // Display on Serial
+    USART1_SendString("\r\n=== WEATHER DATA ===\r\n");
+    USART1_SendString("Temperature: ");
+    USART1_SendNumber(weather.temperature * 10);  // Convert to integer for display
+    USART1_SendString(".");
+    USART1_SendNumber((int) (weather.temperature * 10) % 10);
+    USART1_SendString(" C\r\n");
+
+    USART1_SendString("Wind Speed: ");
+    USART1_SendNumber((int) weather.windspeed);
+    USART1_SendString(" km/h\r\n");
+
+    USART1_SendString("Wind Direction: ");
+    USART1_SendNumber(weather.winddirection);
+    USART1_SendString(" deg\r\n");
+
+    USART1_SendString("Weather Code: ");
+    USART1_SendNumber(weather.weathercode);
+    USART1_SendString("\r\n");
+
+    // Display on LCD
+    LCD_Clear();
+
+    // Line 1: Temperature
+    sprintf(display_line1, "Temp: %.1f C", weather.temperature);
+    LCD_SetCursor(0, 0);
+    LCD_SendString(display_line1);
+
+    // Line 2: Wind speed
+    sprintf(display_line2, "Wind: %.0f km/h", weather.windspeed);
+    LCD_SetCursor(1, 0);
+    LCD_SendString(display_line2);
+
+    USART1_SendString("\r\n=== LCD Updated ===\r\n");
   }
   else if(status == SOCK_CLOSE_WAIT)
   {

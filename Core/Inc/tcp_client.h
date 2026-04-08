@@ -29,6 +29,15 @@
 #define RX_BUFFER_SIZE         1024
 #define TX_BUFFER_SIZE         512
 
+// Structure to hold weather data
+typedef struct
+{
+  float temperature;
+  float windspeed;
+  int winddirection;
+  int weathercode;
+} WeatherData_t;
+
 // Function Prototypes
 int TCP_Client_Init(void);
 void TCP_Client_GetWeather(void);

@@ -26,46 +26,19 @@ static void LCD_SendNibble(uint8_t nibble, uint8_t rs)
     data |= LCD_RS;  // Set RS for data
 
   // ENABLE HIGH
-  I2C1_Start();
-  I2C1_SendAddr(LCD_ADDR, I2C_WRITE);
-  I2C1_WriteByte(data | LCD_ENABLE);  // E=1
-  I2C1_Stop();
+  I2C2_Start();
+  I2C2_SendAddr(LCD_ADDR, I2C_WRITE);
+  I2C2_WriteByte(data | LCD_ENABLE);  // E=1
+  I2C2_Stop();
 
   // Small pulse delay
   for(volatile int i = 0; i < 10; i++);
 
   // ENABLE LOW
-  I2C1_Start();
-  I2C1_SendAddr(LCD_ADDR, I2C_WRITE);
-  I2C1_WriteByte(data & ~LCD_ENABLE);  // E=0
-  I2C1_Stop();
-}
-
-// Initialize LCD
-void LCD_Init(void)
-{
-  // Power-up delay
-  TIMER2_Delay_ms(100);
-
-  // Reset sequence (from HD44780 datasheet)
-  LCD_SendNibble(0x30, 0);  // 8-bit mode
-  TIMER2_Delay_ms(5);
-
-  LCD_SendNibble(0x30, 0);  // 8-bit mode again
-  TIMER2_Delay_ms(5);
-
-  LCD_SendNibble(0x30, 0);  // 8-bit mode again
-  TIMER2_Delay_ms(5);
-
-  LCD_SendNibble(0x20, 0);  // Switch to 4-bit mode
-  TIMER2_Delay_ms(5);
-
-  // Now in 4-bit mode, send configuration commands
-  LCD_SendCmd(0x28);  // 2 lines, 5x8 font
-  /// LCD_SendCmd(0x08);  // Display off
-  LCD_SendCmd(0x01);  // Clear display
-  LCD_SendCmd(0x06);  // Entry mode
-  LCD_SendCmd(0x0C);  // Display on, cursor off
+  I2C2_Start();
+  I2C2_SendAddr(LCD_ADDR, I2C_WRITE);
+  I2C2_WriteByte(data & ~LCD_ENABLE);  // E=0
+  I2C2_Stop();
 }
 
 // Send command (RS=0)
@@ -96,6 +69,33 @@ void LCD_SendData(uint8_t data)
   for(volatile int i = 0; i < 500; i++);
 }
 
+// Initialize LCD
+void LCD_Init(void)
+{
+  // Power-up delay
+  TIMER2_Delay_ms(100);
+
+  // Reset sequence (from HD44780 datasheet)
+  LCD_SendNibble(0x30, 0);  // 8-bit mode
+  TIMER2_Delay_ms(5);
+
+  LCD_SendNibble(0x30, 0);  // 8-bit mode again
+  TIMER2_Delay_ms(5);
+
+  LCD_SendNibble(0x30, 0);  // 8-bit mode again
+  TIMER2_Delay_ms(5);
+
+  LCD_SendNibble(0x20, 0);  // Switch to 4-bit mode
+  TIMER2_Delay_ms(5);
+
+  // Now in 4-bit mode, send configuration commands
+  LCD_SendCmd(0x28);  // 2 lines, 5x8 font
+  LCD_SendCmd(0x08);  // Display off
+  LCD_SendCmd(0x01);  // Clear display
+  LCD_SendCmd(0x06);  // Entry mode
+  LCD_SendCmd(0x0C);  // Display on, cursor off
+}
+
 // Send string
 void LCD_SendString(char *str)
 {
@@ -122,57 +122,4 @@ void LCD_SetCursor(uint8_t row, uint8_t col)
     address = 0xC0 + col;
 
   LCD_SendCmd(address);
-}
-
-void LCD_DisplayReading_Temp(uint8_t temp_int, uint8_t temp_dec, uint8_t hum_int, uint8_t hum_dec)
-{
-  // LINE 1: TEMP: XX.X C
-  LCD_SetCursor(0, 0);
-  LCD_SendString("TEMP: ");
-
-  // Format temperature: XX.X
-  if(temp_int >= 10)
-  {
-    LCD_SendData('0' + (temp_int / 10));
-    LCD_SendData('0' + (temp_int % 10));
-  }
-  else
-  {
-    LCD_SendData(' ');
-    LCD_SendData('0' + temp_int);
-  }
-
-  LCD_SendData('.');
-  LCD_SendData('0' + temp_dec);
-  LCD_SendData(' ');
-  LCD_SendData('C');
-  LCD_SendData(' ');
-  LCD_SendData(' ');
-  LCD_SendData(' ');
-  LCD_SendData(' ');
-
-  // LINE 2: HUMD: XX.X %
-  LCD_SetCursor(1, 0);
-  LCD_SendString("HUMD: ");
-
-  // Format humidity: XX.X
-  if(hum_int >= 10)
-  {
-    LCD_SendData('0' + (hum_int / 10));
-    LCD_SendData('0' + (hum_int % 10));
-  }
-  else
-  {
-    LCD_SendData(' ');
-    LCD_SendData('0' + hum_int);
-  }
-
-  LCD_SendData('.');
-  LCD_SendData('0' + hum_dec);
-  LCD_SendData(' ');
-  LCD_SendData('%');
-  LCD_SendData(' ');
-  LCD_SendData(' ');
-  LCD_SendData(' ');
-  LCD_SendData(' ');
 }
