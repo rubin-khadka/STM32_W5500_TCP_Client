@@ -1,7 +1,7 @@
 /*
  * wizchip_port.c
  *
- *  Created on: Apr 2, 2026
+ *  Created on: Apr 8, 2026
  *      Author: Rubin Khadka
  */
 
@@ -10,6 +10,9 @@
 #include "string.h"
 #include "socket.h"
 #include "usart1.h"
+#include "dhcp.h"
+#include "dns.h"
+#include <stdbool.h>
 
 // W5500 Initialization Return Codes
 typedef enum
@@ -22,22 +25,45 @@ typedef enum
 
 #define W5500_SPI hspi1
 
+// Network configuration with DHCP support
 wiz_NetInfo netInfo =
-    {.mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01}, .ip = {192, 168, 1, 10}, .sn = {255, 255, 255, 0}, .gw = {0, 0, 0, 0}, .dns =
-        {0, 0, 0, 0}, .dhcp = NETINFO_STATIC};
+    {.mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01}, .ip = {192, 168, 1, 10}, .sn = {255, 255, 255, 0}, .gw =
+        {192, 168, 1, 1}, .dns = {8, 8, 8, 8}, .dhcp = NETINFO_DHCP    // Use DHCP by default
+    };
 
 #define W5500_CS_LOW()     HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET)
 #define W5500_CS_HIGH()    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET)
 #define W5500_RST_LOW()    HAL_GPIO_WritePin(RESET_GPIO_Port, RESET_Pin, GPIO_PIN_RESET)
 #define W5500_RST_HIGH()   HAL_GPIO_WritePin(RESET_GPIO_Port, RESET_Pin, GPIO_PIN_SET)
 
+// DHCP variables
+#define DHCP_SOCKET    7      // Socket for DHCP
+#define DNS_SOCKET     6      // Socket for DNS
+static bool ip_assigned = false;
+static uint8_t dhcp_buffer[548];
+static uint8_t dns_buffer[512];
+
 extern SPI_HandleTypeDef W5500_SPI;
+
+// DHCP callback functions
+void Callback_IPAssigned(void)
+{
+  ip_assigned = true;
+  USART1_SendString("DHCP: IP Assigned!\r\n");
+}
+
+void Callback_IPConflict(void)
+{
+  ip_assigned = false;
+  USART1_SendString("DHCP: IP Conflict detected!\r\n");
+}
 
 // SPI transmit/receive
 void W5500_Select(void)
 {
   W5500_CS_LOW();
 }
+
 void W5500_Unselect(void)
 {
   W5500_CS_HIGH();
@@ -59,6 +85,7 @@ void W5500_WriteByte(uint8_t byte)
 int W5500_Init(void)
 {
   uint8_t memsize[2][8] = { {2, 2, 2, 2, 2, 2, 2, 2}, {2, 2, 2, 2, 2, 2, 2, 2}};
+  uint8_t retries;
 
   /***** Reset Sequence  *****/
   W5500_RST_LOW();
@@ -91,7 +118,7 @@ int W5500_Init(void)
 
   /***** Check Link Status  *****/
   uint8_t link = PHY_LINK_OFF;
-  uint8_t retries = 10;
+  retries = 10;
   while((link != PHY_LINK_ON) && (retries > 0))
   {
     ctlwizchip(CW_GET_PHYLINK, &link);
@@ -113,14 +140,65 @@ int W5500_Init(void)
     return W5500_ERR_LINK_DOWN;
   }
 
-  /***** Configure Static IP  *****/
-  USART1_SendString("Using Static IP..\r\n");
+  /***** Try DHCP first  *****/
+  USART1_SendString("Attempting DHCP...\r\n");
+
+  // Set MAC address
+  setSHAR(netInfo.mac);
+
+  // Initialize DHCP
+  DHCP_init(DHCP_SOCKET, dhcp_buffer);
+
+  // Register DHCP callbacks
+  reg_dhcp_cbfunc(Callback_IPAssigned, Callback_IPAssigned, Callback_IPConflict);
+
+  // Wait for DHCP to get IP (max 10 seconds)
+  ip_assigned = false;
+  retries = 20;  // 20 × 500ms = 10 seconds
+  while((!ip_assigned) && (retries > 0))
+  {
+    DHCP_run();
+    HAL_Delay(500);
+    retries--;
+
+    // Show progress every 2 seconds
+    if(retries % 4 == 0)
+    {
+      USART1_SendString("DHCP: Waiting for IP...\r\n");
+    }
+  }
+
+  if(ip_assigned)
+  {
+    // DHCP Success - Get the assigned network info
+    USART1_SendString("DHCP: IP assigned successfully!\r\n");
+
+    getIPfromDHCP(netInfo.ip);
+    getGWfromDHCP(netInfo.gw);
+    getSNfromDHCP(netInfo.sn);
+    getDNSfromDHCP(netInfo.dns);
+
+    USART1_SendString("Using DHCP Configuration\r\n");
+  }
+  else
+  {
+    // DHCP Failed - Use static IP as fallback
+    USART1_SendString("DHCP Failed! Using Static IP as fallback...\r\n");
+    // Keep the static IP already defined in netInfo
+  }
+
+  // Apply network configuration to W5500
   ctlnetwork(CN_SET_NETINFO, (void*) &netInfo);
+
+  /***** Configure DNS  *****/
+  USART1_SendString("Configuring DNS...\r\n");
+  DNS_init(DNS_SOCKET, dns_buffer);
 
   /***** Print assigned IP on the console  *****/
   wiz_NetInfo tmpInfo;
   ctlnetwork(CN_GET_NETINFO, &tmpInfo);
 
+  USART1_SendString("\r\n=== Network Configuration ===\r\n");
   USART1_SendString("IP: ");
   USART1_SendNumber(tmpInfo.ip[0]);
   USART1_SendString(".");
@@ -160,6 +238,7 @@ int W5500_Init(void)
   USART1_SendString(".");
   USART1_SendNumber(tmpInfo.dns[3]);
   USART1_SendString("\r\n");
+  USART1_SendString("===========================\r\n");
 
   return W5500_OK;
 }
