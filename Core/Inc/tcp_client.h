@@ -36,11 +36,16 @@ typedef struct
   float windspeed;
   int winddirection;
   int weathercode;
+  float latitude;
+  float longitude;
+  float elevation;
+  char time[20];
+  char wind_direction_text[4];
 } WeatherData_t;
 
 // Function Prototypes
 int TCP_Client_Init(void);
-void TCP_Client_GetWeather(void);
+void TCP_Client_GetWeather(WeatherData_t *weather);
 void TCP_Client_Close(void);
 
 #endif /* INC_TCP_CLIENT_H_ */

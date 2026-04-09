@@ -33,6 +33,7 @@
 #include "timer3.h"
 #include "i2c2.h"
 #include "lcd.h"
+#include "display.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -131,27 +132,6 @@ int main(void)
     LCD_SendString("Check Ethernet");
     USART1_SendString("ERROR: W5500 initialization failed!\r\n");
     Error_Handler();
-  }
-
-  // Initialize TCP Client and connect to weather server
-  if(TCP_Client_Init() == 0)
-  {
-    USART1_SendString("Connected to server, fetching weather...\r\n");
-
-    // Get and display weather data
-    TCP_Client_GetWeather();
-    TCP_Client_Close();
-
-    USART1_SendString("Weather data displayed on LCD\r\n");
-  }
-  else
-  {
-    LCD_Clear();
-    LCD_SetCursor(0, 0);
-    LCD_SendString("Connection Failed");
-    LCD_SetCursor(1, 0);
-    LCD_SendString("Retry later");
-    USART1_SendString("ERROR: TCP connection failed!\r\n");
   }
 
   // Setup TIM3 for 10ms control loop
