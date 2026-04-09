@@ -5,6 +5,7 @@
  *      Author: Rubin Khadka
  */
 
+#include "main.h"
 #include "display.h"
 #include "lcd.h"
 #include "usart1.h"
@@ -128,7 +129,7 @@ static void DisplayWindScreen(void)
   GetWindDirection(current_weather->winddirection, dir_text);
 
   char line2[17];
-  sprintf(line2, "Dir: %s (%d%c)", dir_text, current_weather->winddirection, 176);
+  sprintf(line2, "Dir: %s (%d deg)", dir_text, current_weather->winddirection);
   LCD_SetCursor(1, 0);
   LCD_SendString(line2);
 

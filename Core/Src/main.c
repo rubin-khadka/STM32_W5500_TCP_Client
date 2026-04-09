@@ -120,6 +120,8 @@ int main(void)
 
   DWT_Delay_ms(2000);
 
+  Display_Init();
+
   USART1_SendString("\r\n=== Weather Station ===\r\n");
 
   // Initialize W5500 with DHCP
@@ -134,8 +136,26 @@ int main(void)
     Error_Handler();
   }
 
-  // Setup TIM3 for 10ms control loop
-  TIMER3_SetupPeriod(10);  // 10ms period
+  WeatherData_t weather;
+
+  // Fetch weather data
+  if(TCP_Client_Init() == 0)
+  {
+    TCP_Client_GetWeather(&weather);
+    TCP_Client_Close();
+
+    // Update display with weather data
+    Display_UpdateWeather(&weather);
+  }
+  else
+  {
+    LCD_Clear();
+    LCD_SetCursor(0, 0);
+    LCD_SendString("Connection");
+    LCD_SetCursor(1, 0);
+    LCD_SendString("Failed!");
+  }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -145,7 +165,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    TIMER3_WaitPeriod();
+    Display_Handle();
   }
   /* USER CODE END 3 */
 }
