@@ -19,6 +19,8 @@
 // DNS Server
 static uint8_t dns_ip[4] = DNS_SERVER_IP;
 static uint8_t server_ip[4];
+static uint8_t cached_ip[4] = {0};  // Cache for IP address
+static uint8_t ip_resolved = 0;      // Flag to track if IP is resolved
 
 // Buffers
 static uint8_t dns_buffer[512];
@@ -28,9 +30,19 @@ static uint8_t tx_buffer[512];
 // DNS Socket from wizchip_port.c
 extern uint8_t dns_buffer[];
 
-// Resolve hostname to IP using DNS
+static void TCP_Client_PrintSocketStatus(void);
+
+// Resolve hostname to IP using DNS (only once)
 static int TCP_Client_ResolveDNS(void)
 {
+  // Use cached IP if already resolved
+  if(ip_resolved)
+  {
+    memcpy(server_ip, cached_ip, 4);
+    USART1_SendString("Using cached IP\r\n");
+    return 0;
+  }
+
   USART1_SendString("Resolving ");
   USART1_SendString(WEATHER_HOST);
   USART1_SendString(" ...\r\n");
@@ -44,6 +56,10 @@ static int TCP_Client_ResolveDNS(void)
     USART1_SendString("DNS resolution failed!\r\n");
     return -1;
   }
+
+  // Cache the resolved IP
+  memcpy(cached_ip, server_ip, 4);
+  ip_resolved = 1;
 
   USART1_SendString("Resolved to: ");
   USART1_SendNumber(server_ip[0]);
@@ -116,15 +132,10 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
   // Initialize
   memset(weather, 0, sizeof(WeatherData_t));
 
-  USART1_SendString("Parsing JSON...\r\n");
-
   // Find the start of JSON (first '{')
   root_start = strchr(response, '{');
   if(!root_start)
-  {
-    USART1_SendString("No JSON found!\r\n");
     return;
-  }
 
   // ===== Extract from ROOT object =====
 
@@ -139,9 +150,6 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
       while(*ptr == ' ')
         ptr++;
       weather->latitude = extract_float(ptr);
-      USART1_SendString("Latitude: ");
-      USART1_SendNumber((int) (weather->latitude * 10));
-      USART1_SendString("\r\n");
     }
   }
 
@@ -156,9 +164,6 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
       while(*ptr == ' ')
         ptr++;
       weather->longitude = extract_float(ptr);
-      USART1_SendString("Longitude: ");
-      USART1_SendNumber((int) (weather->longitude * 10));
-      USART1_SendString("\r\n");
     }
   }
 
@@ -173,28 +178,17 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
       while(*ptr == ' ')
         ptr++;
       weather->elevation = extract_float(ptr);
-      USART1_SendString("Elevation: ");
-      USART1_SendNumber((int) weather->elevation);
-      USART1_SendString(" m\r\n");
     }
   }
 
   // ===== Find "current_weather" object =====
   current_weather_start = strstr(root_start, "\"current_weather\"");
   if(!current_weather_start)
-  {
-    USART1_SendString("current_weather not found!\r\n");
     return;
-  }
 
   current_weather_start = strchr(current_weather_start, '{');
   if(!current_weather_start)
-  {
-    USART1_SendString("No current_weather object found!\r\n");
     return;
-  }
-
-  USART1_SendString("Found current_weather object\r\n");
 
   // ===== Extract from CURRENT_WEATHER object =====
 
@@ -214,9 +208,6 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
         weather->time[i++] = *ptr++;
       }
       weather->time[i] = '\0';
-      USART1_SendString("Time: ");
-      USART1_SendString(weather->time);
-      USART1_SendString("\r\n");
     }
   }
 
@@ -231,9 +222,6 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
       while(*ptr == ' ')
         ptr++;
       weather->temperature = extract_float(ptr);
-      USART1_SendString("Temperature: ");
-      USART1_SendNumber((int) (weather->temperature * 10));
-      USART1_SendString(" C\r\n");
     }
   }
 
@@ -248,9 +236,6 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
       while(*ptr == ' ')
         ptr++;
       weather->windspeed = extract_float(ptr);
-      USART1_SendString("Wind Speed: ");
-      USART1_SendNumber((int) (weather->windspeed * 10));
-      USART1_SendString(" km/h\r\n");
     }
   }
 
@@ -265,9 +250,6 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
       while(*ptr == ' ')
         ptr++;
       weather->winddirection = extract_int(ptr);
-      USART1_SendString("Wind Direction: ");
-      USART1_SendNumber(weather->winddirection);
-      USART1_SendString(" deg\r\n");
     }
   }
 
@@ -282,9 +264,6 @@ static void ParseWeatherData(char *response, WeatherData_t *weather)
       while(*ptr == ' ')
         ptr++;
       weather->weathercode = extract_int(ptr);
-      USART1_SendString("Weather Code: ");
-      USART1_SendNumber(weather->weathercode);
-      USART1_SendString("\r\n");
     }
   }
 }
@@ -297,7 +276,7 @@ int TCP_Client_Init(void)
 
   USART1_SendString("Initializing TCP Client...\r\n");
 
-  // Step 1: Resolve the hostname
+  // Step 1: Resolve the hostname (cached after first time)
   if(TCP_Client_ResolveDNS() != 0)
     return -1;
 
@@ -384,12 +363,8 @@ void TCP_Client_GetWeather(WeatherData_t *weather)
       total_received += ret;
     }
 
-    USART1_SendString("Raw JSON received\r\n");
-
     // Parse weather data into the provided structure
     ParseWeatherData((char*) rx_buffer, weather);
-
-    USART1_SendString("\r\n=== WEATHER DATA PARSED ===\r\n");
   }
   else if(status == SOCK_CLOSE_WAIT)
   {
@@ -402,9 +377,98 @@ void TCP_Client_GetWeather(WeatherData_t *weather)
   }
 }
 
-// Close TCP client connection
 void TCP_Client_Close(void)
 {
+  USART1_SendString("Closing TCP Client...\r\n");
+  TCP_Client_PrintSocketStatus();
+
+  // Try to disconnect properly if connected
+  uint8_t status = getSn_SR(TCP_CLIENT_SOCKET);
+  if(status == SOCK_ESTABLISHED)
+  {
+    USART1_SendString("Disconnecting...\r\n");
+    disconnect(TCP_CLIENT_SOCKET);
+    HAL_Delay(200);  // Increased delay
+  }
+
+  // Close the socket
   close(TCP_CLIENT_SOCKET);
+  HAL_Delay(200);  // Increased delay
+
+  // Extra: Force reset if still not closed
+  status = getSn_SR(TCP_CLIENT_SOCKET);
+  if(status != SOCK_CLOSED)
+  {
+    USART1_SendString("Socket not closed, forcing reset...\r\n");
+    TCP_Client_ForceReset();
+  }
+
+  TCP_Client_PrintSocketStatus();
   USART1_SendString("TCP Client closed\r\n");
+}
+
+// Force complete socket reset
+void TCP_Client_ForceReset(void)
+{
+  USART1_SendString("Force resetting socket...\r\n");
+
+  // Close if open
+  close(TCP_CLIENT_SOCKET);
+  HAL_Delay(100);
+
+  // Re-initialize the socket
+  socket(TCP_CLIENT_SOCKET, Sn_MR_TCP, 0, 0);
+  HAL_Delay(50);
+  close(TCP_CLIENT_SOCKET);
+  HAL_Delay(100);
+
+  TCP_Client_PrintSocketStatus();
+  USART1_SendString("Socket reset complete\r\n");
+}
+
+// Debug function to check socket status
+static void TCP_Client_PrintSocketStatus(void)
+{
+  uint8_t status = getSn_SR(TCP_CLIENT_SOCKET);
+  const char *status_str;
+
+  switch(status)
+  {
+    case SOCK_CLOSED:
+      status_str = "CLOSED";
+      break;
+    case SOCK_INIT:
+      status_str = "INIT";
+      break;
+    case SOCK_LISTEN:
+      status_str = "LISTEN";
+      break;
+    case SOCK_ESTABLISHED:
+      status_str = "ESTABLISHED";
+      break;
+    case SOCK_CLOSE_WAIT:
+      status_str = "CLOSE_WAIT";
+      break;
+    case SOCK_SYNSENT:
+      status_str = "SYNSENT";
+      break;
+    case SOCK_SYNRECV:
+      status_str = "SYNRECV";
+      break;
+    case SOCK_FIN_WAIT:
+      status_str = "FIN_WAIT";
+      break;
+    case SOCK_TIME_WAIT:
+      status_str = "TIME_WAIT";
+      break;
+    default:
+      status_str = "UNKNOWN";
+      break;
+  }
+
+  USART1_SendString("Socket ");
+  USART1_SendNumber(TCP_CLIENT_SOCKET);
+  USART1_SendString(" status: ");
+  USART1_SendString(status_str);
+  USART1_SendString("\r\n");
 }

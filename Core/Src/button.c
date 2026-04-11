@@ -119,6 +119,6 @@ void Button_NextMode(void)
   current_mode++;
   if(current_mode >= DISPLAY_MODE_COUNT)
   {
-    current_mode = DISPLAY_WIND;
+    current_mode = DISPLAY_LOCATION;
   }
 }

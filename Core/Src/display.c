@@ -139,7 +139,6 @@ static void DisplayWindScreen(void)
 // Initialize display system
 void Display_Init(void)
 {
-  LCD_Init();
   LCD_Clear();
   LCD_SetCursor(0, 0);
   LCD_SendString("Weather Station");

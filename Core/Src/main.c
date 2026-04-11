@@ -33,6 +33,7 @@
 #include "timer3.h"
 #include "i2c2.h"
 #include "lcd.h"
+#include "button.h"
 #include "display.h"
 /* USER CODE END Includes */
 
@@ -48,7 +49,7 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define WEATHER_GET_TICKS 30000
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -107,6 +108,11 @@ int main(void)
   USART1_Init();
   I2C2_Init();
   LCD_Init();
+  TIMER4_Init();
+  Button_Init();
+
+  // Loop Counters
+  uint32_t weather_count = 0;
 
   // Welcome Message
   USART1_SendString("============================\r\n");
@@ -156,16 +162,51 @@ int main(void)
     LCD_SendString("Failed!");
   }
 
+  TIMER3_SetupPeriod(10);  // 10ms period
   /* USER CODE END 2 */
 
   /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   while(1)
   {
-    /* USER CODE END WHILE */
+    Display_Handle();      // Handle button presses
 
-    /* USER CODE BEGIN 3 */
-    Display_Handle();
+    // Update weather every minute
+    if(weather_count >= WEATHER_GET_TICKS)
+    {
+      weather_count = 0;
+
+      USART1_SendString("\r\n=== Fetching Weather Update ===\r\n");
+
+      // Show updating message
+      LCD_Clear();
+      LCD_SetCursor(0, 0);
+      LCD_SendString("Updating...");
+      LCD_SetCursor(1, 0);
+      LCD_SendString("Getting Data");
+
+      // Fetch new weather data
+      if(TCP_Client_Init() == 0)
+      {
+        TCP_Client_GetWeather(&weather);
+        TCP_Client_Close();
+        Display_UpdateWeather(&weather);
+        USART1_SendString("Weather updated!\r\n");
+      }
+      else
+      {
+        USART1_SendString("Update failed!\r\n");
+        LCD_Clear();
+        LCD_SetCursor(0, 0);
+        LCD_SendString("Update Failed");
+        LCD_SetCursor(1, 0);
+        LCD_SendString("Retry next time");
+        Display_UpdateWeather(&weather);
+      }
+    }
+
+    weather_count++;
+
+    TIMER3_WaitPeriod();  // Wait for 10ms tick
   }
   /* USER CODE END 3 */
 }
