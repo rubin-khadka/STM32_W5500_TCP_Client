@@ -63,36 +63,36 @@ The TCP Client is the core network engine of this weather station. It handles al
 
 ### How It Works
 1. IP Address Acquisition (DHCP)
-- When the STM32 powers on, the W5500 Ethernet controller requests an IP address from the local network router (or a PC with Internet Connection Sharing)
-- The router automatically assigns an available IP address (e.g., `192.168.137.148`)
-- This process is called DHCP (Dynamic Host Configuration Protocol) and eliminates the need for manual IP configuration
+    - When the STM32 powers on, the W5500 Ethernet controller requests an IP address from the local network router (or a PC with Internet Connection Sharing)
+    - The router automatically assigns an available IP address (e.g., `192.168.137.148`)
+    - This process is called DHCP (Dynamic Host Configuration Protocol) and eliminates the need for manual IP configuration
 
 2. Domain Resolution (DNS)
-- The weather API uses a human-readable domain name: `api.open-meteo.com` 
-- Computers communicate using IP addresses, not domain names
-- The DNS (Domain Name System) client sends a query to a DNS server (typically the router or Google's `8.8.8.8`)
-- The DNS server responds with the corresponding IP address (e.g., `94.130.142.35`)
+    - The weather API uses a human-readable domain name: `api.open-meteo.com` 
+    - Computers communicate using IP addresses, not domain names
+    - The DNS (Domain Name System) client sends a query to a DNS server (typically the router or Google's `8.8.8.8`)
+    - The DNS server responds with the corresponding IP address (e.g., `94.130.142.35`)
 
 3. TCP Connection Establishment
-- A TCP socket is created on the STM32
-- The socket initiates a connection to the resolved IP address on port 80 (standard HTTP port)
-- A three-way handshake (SYN, SYN-ACK, ACK) establishes a reliable connection with the weather server
+    - A TCP socket is created on the STM32
+    - The socket initiates a connection to the resolved IP address on port 80 (standard HTTP port)
+    - A three-way handshake (SYN, SYN-ACK, ACK) establishes a reliable connection with the weather server
 
 4. HTTP Request Transmission
-- An HTTP GET request is formatted and sent to the server
-- The request includes:
-    - The API endpoint (/v1/forecast?latitude=52.52&longitude=13.41&current_weather=true)
-    - The Host header (api.open-meteo.com)
-    - Connection: close (instructs the server to close the connection after responding)
+    - An HTTP GET request is formatted and sent to the server
+    - The request includes:
+        - The API endpoint (/v1/forecast?latitude=52.52&longitude=13.41&current_weather=true)
+        - The Host header (api.open-meteo.com)
+        - Connection: close (instructs the server to close the connection after responding)
 
 5. Response Reception
-- The server responds with a raw JSON payload containing current weather data 
-- The response is received in chunks due to chunked transfer encoding
-- All chunks are assembled into a complete JSON string
+    - The server responds with a raw JSON payload containing current weather data 
+    - The response is received in chunks due to chunked transfer encoding
+    - All chunks are assembled into a complete JSON string
 
 6. Connection Termination
-- After receiving all data, the TCP connection is properly closed
-- The socket is fully reset, making it ready for the next update cycle
+    - After receiving all data, the TCP connection is properly closed
+    - The socket is fully reset, making it ready for the next update cycle
 
 ## W5500 Ethernet Controller
 The W5500 handles the entire TCP/IP stack in hardware, offloading network processing from the STM32. This project uses the Variable Data Mode (VDM) over SPI, which allows flexible, multi-byte data transfers to and from the chip's 32KB internal buffer. The SPI interface is configured in Mode 0 or 3 (clock polarity low, data sampled on the rising edge) for reliable communication.
@@ -120,13 +120,7 @@ What the API returns:
 
 > No API key is required for this level of usage, making Open-Meteo ideal for embedded projects.
 
-## JSON Parsing Strategy
-The raw JSON response is parsed using custom string search functions rather than a full JSON library. This approach:
-- Minimizes code size (no external JSON library needed)
-- Runs efficiently on the STM32's limited resources
-- Extracts only the necessary fields (`temperature`, `windspeed`, `winddirection`, `weathercode`, `time`, `latitude`, `longitude`, `elevation`)
-
-The parser locates the `current_weather` object in the response and extracts numeric values using manual character-by-character conversion.
+The JSON parser locates the `current_weather` object in the response and extracts numeric values using manual character-by-character conversion.
 
 ## Related Projects 
 - [STM32_W5500_TCP_Server (Non-RTOS version)](https://github.com/rubin-khadka/STM32_W5500_TCP_Server)
