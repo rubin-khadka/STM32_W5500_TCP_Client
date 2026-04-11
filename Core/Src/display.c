@@ -8,15 +8,13 @@
 #include "main.h"
 #include "display.h"
 #include "lcd.h"
+#include "button.h"
 #include "usart1.h"
 #include <stdio.h>
 #include <string.h>
 
-// Static variables for screen cycling
 static WeatherData_t *current_weather = NULL;
-static int current_screen = 0;
-static uint32_t last_screen_change = 0;
-static uint8_t display_ready = 0;
+static DisplayMode_t last_mode = DISPLAY_LOCATION;
 
 // Convert wind direction degrees to cardinal direction
 static void GetWindDirection(int degrees, char *direction)
@@ -49,7 +47,7 @@ static void DisplayLocationScreen(void)
 
   LCD_Clear();
 
-  // Line 1: Latitude and Longitude with N/S/E/W indicators
+  // Line 1: Latitude and Longitude
   char line1[17];
   char ns = (current_weather->latitude >= 0) ? 'N' : 'S';
   char ew = (current_weather->longitude >= 0) ? 'E' : 'W';
@@ -66,15 +64,14 @@ static void DisplayLocationScreen(void)
   LCD_SetCursor(1, 0);
   LCD_SendString(line2);
 
-  // Debug output
-  USART1_SendString("\r\n=== Screen: Location ===\r\n");
+  USART1_SendString("\r\n=== Location ===\r\n");
   USART1_SendString(line1);
   USART1_SendString("\r\n");
   USART1_SendString(line2);
   USART1_SendString("\r\n");
 }
 
-// Screen 2: Time and Temperature
+// Screen 2: Temperature and Time
 static void DisplayTempTimeScreen(void)
 {
   if(!current_weather)
@@ -88,7 +85,7 @@ static void DisplayTempTimeScreen(void)
   LCD_SetCursor(0, 0);
   LCD_SendString(line1);
 
-  // Line 2: Time (extract just HH:MM from 2026-04-09T17:45)
+  // Line 2: Time (extract HH:MM from 2026-04-09T17:45)
   char time_only[6] = "??:??";
   char *time_ptr = strchr(current_weather->time, 'T');
   if(time_ptr)
@@ -102,8 +99,7 @@ static void DisplayTempTimeScreen(void)
   LCD_SetCursor(1, 0);
   LCD_SendString(line2);
 
-  // Debug output
-  USART1_SendString("\r\n=== Screen: Temp & Time ===\r\n");
+  USART1_SendString("\r\n=== Temperature & Time ===\r\n");
   USART1_SendString(line1);
   USART1_SendString("\r\n");
   USART1_SendString(line2);
@@ -129,12 +125,11 @@ static void DisplayWindScreen(void)
   GetWindDirection(current_weather->winddirection, dir_text);
 
   char line2[17];
-  sprintf(line2, "Dir: %s (%d deg)", dir_text, current_weather->winddirection);
+  sprintf(line2, "Dir: %s (%d)", dir_text, current_weather->winddirection);
   LCD_SetCursor(1, 0);
   LCD_SendString(line2);
 
-  // Debug output
-  USART1_SendString("\r\n=== Screen: Wind ===\r\n");
+  USART1_SendString("\r\n=== Wind ===\r\n");
   USART1_SendString(line1);
   USART1_SendString("\r\n");
   USART1_SendString(line2);
@@ -151,56 +146,46 @@ void Display_Init(void)
   LCD_SetCursor(1, 0);
   LCD_SendString("Initializing...");
 
-  display_ready = 1;
-  current_screen = 0;
-  last_screen_change = HAL_GetTick();
-
   USART1_SendString("Display initialized\r\n");
 }
 
 // Update display with new weather data
 void Display_UpdateWeather(WeatherData_t *weather)
 {
-  if(!display_ready)
-    return;
-
   current_weather = weather;
-  current_screen = 0;
-  last_screen_change = HAL_GetTick();
+  last_mode = DISPLAY_LOCATION;
 
-  // Show first screen immediately
+  // Show location screen first
   DisplayLocationScreen();
 
   USART1_SendString("Weather data loaded to display\r\n");
 }
 
-// Call this in main loop to handle screen cycling
+// Call this in main loop - handles button presses
 void Display_Handle(void)
 {
-  if(!display_ready || !current_weather)
+  if(!current_weather)
     return;
 
-  uint32_t current_time = HAL_GetTick();
+  DisplayMode_t current_mode = Button_GetMode();
 
-  // Change screen every SCREEN_CHANGE_INTERVAL milliseconds
-  if(current_time - last_screen_change >= SCREEN_CHANGE_INTERVAL)
+  // Only update if mode changed
+  if(current_mode != last_mode)
   {
-    current_screen++;
-    if(current_screen >= 3)
-      current_screen = 0;
-    last_screen_change = current_time;
+    last_mode = current_mode;
 
-    // Update display based on current screen
-    switch(current_screen)
+    switch(current_mode)
     {
-      case 0:
+      case DISPLAY_LOCATION:
         DisplayLocationScreen();
         break;
-      case 1:
+      case DISPLAY_TEMPERATURE:
         DisplayTempTimeScreen();
         break;
-      case 2:
+      case DISPLAY_WIND:
         DisplayWindScreen();
+        break;
+      case DISPLAY_MODE_COUNT:
         break;
     }
   }

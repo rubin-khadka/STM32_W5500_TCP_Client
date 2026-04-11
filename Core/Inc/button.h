@@ -11,15 +11,11 @@
 // Display modes structure
 typedef enum
 {
-  DISPLAY_MODE_TEMP_HUM = 0,  // DHT11 temperature and humidity
-  DISPLAY_MODE_ACCEL,         // MPU6050 accelerometer
-  DISPLAY_MODE_GYRO,          // MPU6050 gyroscope
-  DISPLAY_MODE_DATE_TIME,
+  DISPLAY_LOCATION = 0,
+  DISPLAY_TEMPERATURE,
+  DISPLAY_WIND,
   DISPLAY_MODE_COUNT
 } DisplayMode_t;
-
-extern volatile uint8_t g_button2_pressed;
-extern volatile uint8_t g_button3_pressed;
 
 // Function Prototypes
 void Button_Init(void);
